@@ -39,56 +39,64 @@ const MapView = ({ pickup, destination, distance }) => {
   }, []);
 
   const handlePredict = async () => {
-    if (!pickup || !distance) {
-      alert("Please select pickup and destination first!");
-      return;
-    }
+  if (!pickup || !distance) {
+    alert("Please select pickup and destination first!");
+    return;
+  }
 
-    const mainPoints = [
-      { name: "Tambaram", lat: 12.9229, lon: 80.1275 },
-      { name: "Velachery", lat: 12.9798, lon: 80.2209 },
-      { name: "Guindy", lat: 13.0109, lon: 80.2127 },
-      { name: "T Nagar", lat: 13.0418, lon: 80.2337 },
-      { name: "Adyar", lat: 13.0067, lon: 80.2550 },
-      { name: "Nungambakkam", lat: 13.0604, lon: 80.2376 },
-      { name: "Anna Nagar", lat: 13.0878, lon: 80.2138 },
-      { name: "Central", lat: 13.0827, lon: 80.2707 },
-      { name: "Airport", lat: 12.9941, lon: 80.1709 },
-    ];
+  const mainPoints = [
+    { name: "Tambaram", lat: 12.9229, lon: 80.1275 },
+    { name: "Velachery", lat: 12.9798, lon: 80.2209 },
+    { name: "Guindy", lat: 13.0109, lon: 80.2127 },
+    { name: "T Nagar", lat: 13.0418, lon: 80.2337 },
+    { name: "Adyar", lat: 13.0067, lon: 80.2550 },
+    { name: "Nungambakkam", lat: 13.0604, lon: 80.2376 },
+    { name: "Anna Nagar", lat: 13.0878, lon: 80.2138 },
+    { name: "Central", lat: 13.0827, lon: 80.2707 },
+    { name: "Airport", lat: 12.9941, lon: 80.1709 },
+  ];
 
-    const nearest = mainPoints.reduce((prev, curr) => {
-      const dPrev = Math.sqrt(
-        (pickup.lat - prev.lat) ** 2 + (pickup.lon - prev.lon) ** 2
-      );
-      const dCurr = Math.sqrt(
-        (pickup.lat - curr.lat) ** 2 + (pickup.lon - curr.lon) ** 2
-      );
-      return dCurr < dPrev ? curr : prev;
+  const nearest = mainPoints.reduce((prev, curr) => {
+    const dPrev = Math.hypot(pickup.lat - prev.lat, pickup.lon - prev.lon);
+    const dCurr = Math.hypot(pickup.lat - curr.lat, pickup.lon - curr.lon);
+    return dCurr < dPrev ? curr : prev;
+  });
+
+  const now = new Date();
+  const weekday = now.getDay() === 0 || now.getDay() === 6 ? "No" : "Yes";
+  const hour = now.getHours();
+
+  const payload = {
+    start_location: nearest.name,
+    distance_km: parseFloat(distance),
+    rain: rain ? "Yes" : "No",
+    weekday,
+    hour
+  };
+
+  try {
+    // 🔹 1. Send to PythonAnywhere
+    const res = await fetch("https://taxidemand.pythonanywhere.com/predict", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    setPrediction(data.predicted_demand);
+
+    // 🔹 2. Send same request to AWS (does not affect UI)
+    fetch("https://rh7845qsbh.execute-api.us-east-2.amazonaws.com/log", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
     });
 
-    const now = new Date();
-    const weekday = now.getDay() === 0 || now.getDay() === 6 ? "No" : "Yes";
-    const hour = now.getHours();
+  } catch (error) {
+    console.error("Prediction failed:", error);
+    alert("Error predicting demand. Please try again.");
+  }
+};
 
-    try {
-      const res = await fetch("https://taxidemand.pythonanywhere.com/predict", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          start_location: nearest.name,
-          distance_km: parseFloat(distance),
-          rain: rain ? "Yes" : "No",
-          weekday,
-          hour
-        }),
-      });
-      const data = await res.json();
-      setPrediction(data.predicted_demand);
-    } catch (error) {
-      console.error("Prediction failed:", error);
-      alert("Error predicting demand. Please try again.");
-    }
-  };
 
   return (
     <div style={{ height: "100%", width: "100%", position: "relative" }}>
@@ -149,9 +157,17 @@ const MapView = ({ pickup, destination, distance }) => {
 
         {prediction && (
           <span style={{ marginLeft: "10px", fontWeight: "bold" }}>
-            Demand: {prediction}
+            Demand: {(prediction)}{"=>"}{" "}
+            {prediction < 30
+              ? "Low"
+              : prediction <= 50
+              ? "Moderate"
+              : "High"}
+            <br />
+            Price per km: Rs.{(prediction / 10) * 5}
           </span>
         )}
+
       </div>
     </div>
   );
